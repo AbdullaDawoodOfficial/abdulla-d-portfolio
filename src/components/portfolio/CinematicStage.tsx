@@ -1,3 +1,563 @@
+// import { gsap } from "gsap";
+// import { ScrollTrigger } from "gsap/ScrollTrigger";
+// import { useEffect, useRef, type ReactNode } from "react";
+
+// import type { SectionId } from "@/content/profile";
+
+// import { CINEMATIC_QUERY, navigateTo, setSceneResolver } from "./cinematic";
+
+// export type Scene = { id: SectionId; label: string; content: ReactNode };
+
+// /** Timeline units: HOLD = scene rests, ZOOM = zoom-through transition. */
+// const HOLD = 0.55;
+// const ZOOM = 1;
+// /** Viewport heights of scroll per timeline unit. */
+// const SCROLL_PER_UNIT = 0.9;
+
+// /**
+//  * Pins a full-viewport stage and drives a scroll-scrubbed "zoom-through":
+//  * the current scene scales toward the viewer and dissolves while the next one
+//  * emerges from depth. Scrolling back reverses it exactly. On small/short
+//  * screens or with reduced motion, scenes fall back to natural scrolling.
+//  */
+// export function CinematicStage({
+//   scenes,
+//   onActiveChange,
+// }: {
+//   scenes: Scene[];
+//   onActiveChange: (id: SectionId) => void;
+// }) {
+//   const stageRef = useRef<HTMLDivElement>(null);
+//   const activeRef = useRef<SectionId>(scenes[0]!.id);
+//   const onActiveRef = useRef(onActiveChange);
+
+//   useEffect(() => {
+//     onActiveRef.current = onActiveChange;
+//   }, [onActiveChange]);
+
+//   useEffect(() => {
+//     const stage = stageRef.current;
+//     if (!stage) return;
+//     gsap.registerPlugin(ScrollTrigger);
+
+//     const ids = scenes.map((s) => s.id);
+//     const report = (id: SectionId) => {
+//       if (activeRef.current === id) return;
+//       activeRef.current = id;
+//       onActiveRef.current(id);
+//     };
+
+//     const sceneEls = Array.from(stage.querySelectorAll<HTMLElement>("[data-scene]"));
+//     const inners = sceneEls.map((el) => el.querySelector<HTMLElement>("[data-scene-inner]")!);
+//     const initialHash = window.location.hash.slice(1);
+
+//     const mm = gsap.matchMedia();
+
+//     mm.add(CINEMATIC_QUERY, () => {
+//       const n = sceneEls.length;
+//       const step = HOLD + ZOOM;
+//       const total = (n - 1) * step + HOLD;
+//       const labelTimes = sceneEls.map((_, i) => i * step);
+
+//       // Base scale per scene so tall content always fits the viewport.
+//       const fit = (i: number) => {
+//         const scene = sceneEls[i]!;
+//         const inner = inners[i]!;
+//         const cs = getComputedStyle(scene);
+//         const avail = scene.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+//         return Math.min(1, avail / Math.max(1, inner.offsetHeight));
+//       };
+
+//       gsap.set(sceneEls.slice(1), { autoAlpha: 0 });
+//       inners.forEach((inner, i) => gsap.set(inner, { scale: i === 0 ? fit(0) : fit(i) * 0.72 }));
+
+//       const tl = gsap.timeline({
+//         defaults: { ease: "none" },
+//         scrollTrigger: {
+//           trigger: stage,
+//           start: "top top",
+//           end: () => `+=${Math.round(total * window.innerHeight * SCROLL_PER_UNIT)}`,
+//           pin: true,
+//           scrub: 0.9,
+//           anticipatePin: 1,
+//           invalidateOnRefresh: true,
+//           onUpdate: (self) => {
+//             const t = self.progress * total;
+//             let idx = 0;
+//             for (let i = 0; i < labelTimes.length; i++) if (t >= labelTimes[i]! - ZOOM / 2) idx = i;
+//             report(ids[idx]!);
+//           },
+//         },
+//       });
+
+//       for (let i = 0; i < n - 1; i++) {
+//         const t0 = i * step + HOLD;
+//         const current = sceneEls[i]!;
+//         const next = sceneEls[i + 1]!;
+//         const inner = inners[i]!;
+//         const nextInner = inners[i + 1]!;
+//         // Current scene: zoom toward the viewer and dissolve.
+//         tl.fromTo(
+//           inner,
+//           { scale: () => fit(i) },
+//           { scale: () => fit(i) * 2.4, duration: ZOOM * 0.75, ease: "power2.in", immediateRender: false },
+//           t0,
+//         );
+//         tl.to(current, { autoAlpha: 0, duration: ZOOM * 0.4, ease: "power1.in" }, t0 + ZOOM * 0.15);
+//         // Next scene: emerge from depth into place.
+//         tl.fromTo(
+//           nextInner,
+//           { scale: () => fit(i + 1) * 0.72 },
+//           { scale: () => fit(i + 1), duration: ZOOM * 0.55, ease: "power3.out", immediateRender: false },
+//           t0 + ZOOM * 0.45,
+//         );
+//         tl.to(next, { autoAlpha: 1, duration: ZOOM * 0.4, ease: "power1.out" }, t0 + ZOOM * 0.5);
+//       }
+//       // Rest on the final scene before releasing the pin.
+//       tl.to({}, { duration: HOLD }, (n - 1) * step);
+
+//       setSceneResolver((id) => {
+//         const idx = ids.indexOf(id as SectionId);
+//         const st = tl.scrollTrigger;
+//         if (idx < 0 || !st) return null;
+//         return st.start + (st.end - st.start) * (labelTimes[idx]! / total);
+//       });
+
+//       if (initialHash && ids.includes(initialHash as SectionId)) {
+//         requestAnimationFrame(() => navigateTo(initialHash, { instant: true }));
+//       }
+
+//       return () => setSceneResolver(null);
+//     });
+
+//     mm.add(`not all and ${CINEMATIC_QUERY}`, () => {
+//       const io = new IntersectionObserver(
+//         (entries) => {
+//           for (const entry of entries) {
+//             if (entry.isIntersecting) report(entry.target.id as SectionId);
+//           }
+//         },
+//         { rootMargin: "-45% 0px -50% 0px" },
+//       );
+//       sceneEls.forEach((el) => io.observe(el));
+//       return () => io.disconnect();
+//     });
+
+//     let cancelled = false;
+//     document.fonts?.ready.then(() => {
+//       if (!cancelled) ScrollTrigger.refresh();
+//     });
+
+//     return () => {
+//       cancelled = true;
+//       mm.revert();
+//     };
+//   }, [scenes]);
+
+//   return (
+//     <div ref={stageRef} className="stage">
+//       {scenes.map((scene) => (
+//         <section
+//           key={scene.id}
+//           id={scene.id}
+//           data-scene
+//           aria-label={scene.label}
+//           className="scene"
+//         >
+//           <div data-scene-inner className="scene-inner w-full">
+//             {scene.content}
+//           </div>
+//         </section>
+//       ))}
+//     </div>
+//   );
+// }
+// ----------------------------
+
+// import { gsap } from "gsap";
+// import { ScrollTrigger } from "gsap/ScrollTrigger";
+// import { useEffect, useRef, type ReactNode } from "react";
+
+// import type { SectionId } from "@/content/profile";
+
+// import { CINEMATIC_QUERY, navigateTo, setSceneResolver } from "./cinematic";
+
+// export type Scene = { id: SectionId; label: string; content: ReactNode };
+
+// /** Timeline units: HOLD = scene rests, ZOOM = zoom-through transition. */
+// const HOLD = 0.55;
+// const ZOOM = 1;
+
+// /** Viewport heights of scroll per timeline unit. */
+// const SCROLL_PER_UNIT = 0.9;
+
+// export function CinematicStage({
+//   scenes,
+//   onActiveChange,
+// }: {
+//   scenes: Scene[];
+//   onActiveChange: (id: SectionId) => void;
+// }) {
+//   const stageRef = useRef<HTMLDivElement>(null);
+//   const activeRef = useRef<SectionId>(scenes[0]!.id);
+//   const onActiveRef = useRef(onActiveChange);
+
+//   useEffect(() => {
+//     onActiveRef.current = onActiveChange;
+//   }, [onActiveChange]);
+
+//   useEffect(() => {
+//     const stage = stageRef.current;
+//     if (!stage) return;
+
+//     gsap.registerPlugin(ScrollTrigger);
+
+//     const ids = scenes.map((s) => s.id);
+
+//     const report = (id: SectionId) => {
+//       if (activeRef.current === id) return;
+
+//       activeRef.current = id;
+//       onActiveRef.current(id);
+//     };
+
+//     const sceneEls = Array.from(
+//       stage.querySelectorAll<HTMLElement>("[data-scene]"),
+//     );
+
+//     const inners = sceneEls.map(
+//       (el) => el.querySelector<HTMLElement>("[data-scene-inner]")!,
+//     );
+
+//     const initialHash = window.location.hash.slice(1);
+//     const mm = gsap.matchMedia();
+
+//     mm.add(CINEMATIC_QUERY, () => {
+//       const n = sceneEls.length;
+//       const step = HOLD + ZOOM;
+//       const total = (n - 1) * step + HOLD;
+//       const labelTimes = sceneEls.map((_, i) => i * step);
+
+//       // Calculate scale so scene content fits the viewport.
+//       const fit = (i: number) => {
+//         const scene = sceneEls[i]!;
+//         const inner = inners[i]!;
+
+//         const cs = getComputedStyle(scene);
+
+//         const avail =
+//           scene.clientHeight -
+//           parseFloat(cs.paddingTop) -
+//           parseFloat(cs.paddingBottom);
+
+//         return Math.min(
+//           1,
+//           avail / Math.max(1, inner.offsetHeight),
+//         );
+//       };
+
+//       gsap.set(sceneEls.slice(1), { autoAlpha: 0 });
+
+//       inners.forEach((inner, i) =>
+//         gsap.set(inner, {
+//           scale: i === 0 ? fit(0) : fit(i) * 0.72,
+//         }),
+//       );
+
+//       const tl = gsap.timeline({
+//         defaults: { ease: "none" },
+
+//         scrollTrigger: {
+//           trigger: stage,
+//           start: "top top",
+
+//           end: () =>
+//             `+=${Math.round(
+//               total * window.innerHeight * SCROLL_PER_UNIT,
+//             )}`,
+
+//           pin: true,
+//           scrub: 0.9,
+//           anticipatePin: 1,
+//           invalidateOnRefresh: true,
+
+//           onUpdate: (self) => {
+//             const t = self.progress * total;
+
+//             let idx = 0;
+
+//             for (let i = 0; i < labelTimes.length; i++) {
+//               if (t >= labelTimes[i]! - ZOOM / 2) {
+//                 idx = i;
+//               }
+//             }
+
+//             report(ids[idx]!);
+//           },
+//         },
+//       });
+
+//       // Main cinematic transitions.
+//       for (let i = 0; i < n - 1; i++) {
+//         const t0 = i * step + HOLD;
+
+//         const current = sceneEls[i]!;
+//         const next = sceneEls[i + 1]!;
+
+//         const inner = inners[i]!;
+//         const nextInner = inners[i + 1]!;
+
+//         // Current scene zooms toward the viewer.
+//         tl.fromTo(
+//           inner,
+//           { scale: () => fit(i) },
+//           {
+//             scale: () => fit(i) * 2.4,
+//             duration: ZOOM * 0.75,
+//             ease: "power2.in",
+//             immediateRender: false,
+//           },
+//           t0,
+//         );
+
+//         // Current scene fades away.
+//         tl.to(
+//           current,
+//           {
+//             autoAlpha: 0,
+//             duration: ZOOM * 0.4,
+//             ease: "power1.in",
+//           },
+//           t0 + ZOOM * 0.15,
+//         );
+
+//         // Next scene emerges from depth.
+//         tl.fromTo(
+//           nextInner,
+//           { scale: () => fit(i + 1) * 0.72 },
+//           {
+//             scale: () => fit(i + 1),
+//             duration: ZOOM * 0.55,
+//             ease: "power3.out",
+//             immediateRender: false,
+//           },
+//           t0 + ZOOM * 0.45,
+//         );
+
+//         // Next scene becomes visible.
+//         tl.to(
+//           next,
+//           {
+//             autoAlpha: 1,
+//             duration: ZOOM * 0.4,
+//             ease: "power1.out",
+//           },
+//           t0 + ZOOM * 0.5,
+//         );
+
+//         // ==========================================
+//         // ABOUT SECTION ANIMATION
+//         // ==========================================
+
+//         if (ids[i + 1] === "about") {
+//           const heading =
+//             next.querySelector<HTMLElement>(
+//               "[data-about-heading]",
+//             );
+
+//           const copy =
+//             next.querySelector<HTMLElement>(
+//               "[data-about-copy]",
+//             );
+
+//           const education =
+//             next.querySelector<HTMLElement>(
+//               "[data-about-education]",
+//             );
+
+//           const focus =
+//             next.querySelector<HTMLElement>(
+//               "[data-about-focus]",
+//             );
+
+//           const location =
+//             next.querySelector<HTMLElement>(
+//               "[data-about-location]",
+//             );
+
+//           // 1. Heading moves upward into position.
+//           if (heading) {
+//             tl.fromTo(
+//               heading,
+//               { y: 76, autoAlpha: 0 },
+//               {
+//                 y: 0,
+//                 autoAlpha: 1,
+//                 duration: 0.42,
+//                 ease: "power3.out",
+//                 immediateRender: false,
+//               },
+//               t0 + ZOOM * 0.5,
+//             );
+//           }
+
+//           // 2. Description appears after heading.
+//           if (copy) {
+//             tl.fromTo(
+//               copy,
+//               { y: 28, autoAlpha: 0 },
+//               {
+//                 y: 0,
+//                 autoAlpha: 1,
+//                 duration: 0.38,
+//                 ease: "power2.out",
+//                 immediateRender: false,
+//               },
+//               t0 + ZOOM * 0.62,
+//             );
+//           }
+
+//           // 3. Education card enters first.
+//           if (education) {
+//             tl.fromTo(
+//               education,
+//               {
+//                 x: 110,
+//                 y: 12,
+//                 autoAlpha: 0,
+//                 scale: 0.96,
+//               },
+//               {
+//                 x: 0,
+//                 y: 0,
+//                 autoAlpha: 1,
+//                 scale: 1,
+//                 duration: 0.38,
+//                 ease: "power3.out",
+//                 immediateRender: false,
+//               },
+//               t0 + ZOOM * 0.58,
+//             );
+//           }
+
+//           // 4. Core focus card enters second.
+//           if (focus) {
+//             tl.fromTo(
+//               focus,
+//               {
+//                 x: 90,
+//                 autoAlpha: 0,
+//                 scale: 0.96,
+//               },
+//               {
+//                 x: 0,
+//                 autoAlpha: 1,
+//                 scale: 1,
+//                 duration: 0.32,
+//                 ease: "power3.out",
+//                 immediateRender: false,
+//               },
+//               t0 + ZOOM * 0.72,
+//             );
+//           }
+
+//           // 5. Based in card enters last.
+//           if (location) {
+//             tl.fromTo(
+//               location,
+//               {
+//                 x: 90,
+//                 autoAlpha: 0,
+//                 scale: 0.96,
+//               },
+//               {
+//                 x: 0,
+//                 autoAlpha: 1,
+//                 scale: 1,
+//                 duration: 0.32,
+//                 ease: "power3.out",
+//                 immediateRender: false,
+//               },
+//               t0 + ZOOM * 0.84,
+//             );
+//           }
+//         }
+//       }
+
+//       // Rest on the final scene before releasing the pin.
+//       tl.to({}, { duration: HOLD }, (n - 1) * step);
+
+//       setSceneResolver((id) => {
+//         const idx = ids.indexOf(id as SectionId);
+//         const st = tl.scrollTrigger;
+
+//         if (idx < 0 || !st) return null;
+
+//         return (
+//           st.start +
+//           (st.end - st.start) * (labelTimes[idx]! / total)
+//         );
+//       });
+
+//       if (initialHash && ids.includes(initialHash as SectionId)) {
+//         requestAnimationFrame(() =>
+//           navigateTo(initialHash, { instant: true }),
+//         );
+//       }
+
+//       return () => setSceneResolver(null);
+//     });
+
+//     // Natural scrolling on smaller screens or reduced-motion settings.
+//     mm.add(`not all and ${CINEMATIC_QUERY}`, () => {
+//       const io = new IntersectionObserver(
+//         (entries) => {
+//           for (const entry of entries) {
+//             if (entry.isIntersecting) {
+//               report(entry.target.id as SectionId);
+//             }
+//           }
+//         },
+//         { rootMargin: "-45% 0px -50% 0px" },
+//       );
+
+//       sceneEls.forEach((el) => io.observe(el));
+
+//       return () => io.disconnect();
+//     });
+
+//     let cancelled = false;
+
+//     document.fonts?.ready.then(() => {
+//       if (!cancelled) ScrollTrigger.refresh();
+//     });
+
+//     return () => {
+//       cancelled = true;
+//       mm.revert();
+//     };
+//   }, [scenes]);
+
+//   return (
+//     <div ref={stageRef} className="stage">
+//       {scenes.map((scene) => (
+//         <section
+//           key={scene.id}
+//           id={scene.id}
+//           data-scene
+//           aria-label={scene.label}
+//           className="scene"
+//         >
+//           <div data-scene-inner className="scene-inner w-full">
+//             {scene.content}
+//           </div>
+//         </section>
+//       ))}
+//     </div>
+//   );
+// }---------------------
+
+
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useEffect, useRef, type ReactNode } from "react";
@@ -11,15 +571,10 @@ export type Scene = { id: SectionId; label: string; content: ReactNode };
 /** Timeline units: HOLD = scene rests, ZOOM = zoom-through transition. */
 const HOLD = 0.55;
 const ZOOM = 1;
+
 /** Viewport heights of scroll per timeline unit. */
 const SCROLL_PER_UNIT = 0.9;
 
-/**
- * Pins a full-viewport stage and drives a scroll-scrubbed "zoom-through":
- * the current scene scales toward the viewer and dissolves while the next one
- * emerges from depth. Scrolling back reverses it exactly. On small/short
- * screens or with reduced motion, scenes fall back to natural scrolling.
- */
 export function CinematicStage({
   scenes,
   onActiveChange,
@@ -38,19 +593,27 @@ export function CinematicStage({
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
+
     gsap.registerPlugin(ScrollTrigger);
 
     const ids = scenes.map((s) => s.id);
+
     const report = (id: SectionId) => {
       if (activeRef.current === id) return;
+
       activeRef.current = id;
       onActiveRef.current(id);
     };
 
-    const sceneEls = Array.from(stage.querySelectorAll<HTMLElement>("[data-scene]"));
-    const inners = sceneEls.map((el) => el.querySelector<HTMLElement>("[data-scene-inner]")!);
-    const initialHash = window.location.hash.slice(1);
+    const sceneEls = Array.from(
+      stage.querySelectorAll<HTMLElement>("[data-scene]"),
+    );
 
+    const inners = sceneEls.map(
+      (el) => el.querySelector<HTMLElement>("[data-scene-inner]")!,
+    );
+
+    const initialHash = window.location.hash.slice(1);
     const mm = gsap.matchMedia();
 
     mm.add(CINEMATIC_QUERY, () => {
@@ -59,91 +622,298 @@ export function CinematicStage({
       const total = (n - 1) * step + HOLD;
       const labelTimes = sceneEls.map((_, i) => i * step);
 
-      // Base scale per scene so tall content always fits the viewport.
+      // Calculate scale so scene content fits the viewport.
       const fit = (i: number) => {
         const scene = sceneEls[i]!;
         const inner = inners[i]!;
+
         const cs = getComputedStyle(scene);
-        const avail = scene.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-        return Math.min(1, avail / Math.max(1, inner.offsetHeight));
+
+        const avail =
+          scene.clientHeight -
+          parseFloat(cs.paddingTop) -
+          parseFloat(cs.paddingBottom);
+
+        return Math.min(
+          1,
+          avail / Math.max(1, inner.offsetHeight),
+        );
       };
 
+      // Keep every upcoming section hidden initially.
       gsap.set(sceneEls.slice(1), { autoAlpha: 0 });
-      inners.forEach((inner, i) => gsap.set(inner, { scale: i === 0 ? fit(0) : fit(i) * 0.72 }));
+
+      inners.forEach((inner, i) =>
+        gsap.set(inner, {
+          scale: i === 0 ? fit(0) : fit(i) * 0.72,
+        }),
+      );
 
       const tl = gsap.timeline({
         defaults: { ease: "none" },
+
         scrollTrigger: {
           trigger: stage,
           start: "top top",
-          end: () => `+=${Math.round(total * window.innerHeight * SCROLL_PER_UNIT)}`,
+
+          end: () =>
+            `+=${Math.round(
+              total * window.innerHeight * SCROLL_PER_UNIT,
+            )}`,
+
           pin: true,
-          scrub: 0.9,
+          scrub: 0.35,
           anticipatePin: 1,
           invalidateOnRefresh: true,
+
           onUpdate: (self) => {
             const t = self.progress * total;
+
             let idx = 0;
-            for (let i = 0; i < labelTimes.length; i++) if (t >= labelTimes[i]! - ZOOM / 2) idx = i;
+
+            for (let i = 0; i < labelTimes.length; i++) {
+              if (t >= labelTimes[i]! - ZOOM / 2) {
+                idx = i;
+              }
+            }
+
             report(ids[idx]!);
           },
         },
       });
 
+      // Main cinematic transitions.
       for (let i = 0; i < n - 1; i++) {
         const t0 = i * step + HOLD;
+
         const current = sceneEls[i]!;
         const next = sceneEls[i + 1]!;
+
         const inner = inners[i]!;
         const nextInner = inners[i + 1]!;
-        // Current scene: zoom toward the viewer and dissolve.
+
+        // 1. Current scene zooms toward the viewer.
         tl.fromTo(
           inner,
           { scale: () => fit(i) },
-          { scale: () => fit(i) * 2.4, duration: ZOOM * 0.75, ease: "power2.in", immediateRender: false },
+          {
+            scale: () => fit(i) * 2.4,
+            duration: ZOOM * 0.75,
+            ease: "power2.in",
+            immediateRender: false,
+          },
           t0,
         );
-        tl.to(current, { autoAlpha: 0, duration: ZOOM * 0.4, ease: "power1.in" }, t0 + ZOOM * 0.15);
-        // Next scene: emerge from depth into place.
+
+        // 2. Current scene completely disappears first.
+        tl.to(
+          current,
+          {
+            autoAlpha: 0,
+            duration: ZOOM * 0.4,
+            ease: "power1.in",
+          },
+          t0 + ZOOM * 0.15,
+        );
+
+        // 3. Next scene starts only after the previous
+        // scene has finished fading out.
         tl.fromTo(
           nextInner,
           { scale: () => fit(i + 1) * 0.72 },
-          { scale: () => fit(i + 1), duration: ZOOM * 0.55, ease: "power3.out", immediateRender: false },
-          t0 + ZOOM * 0.45,
+          {
+            scale: () => fit(i + 1),
+            duration: ZOOM * 0.45,
+            ease: "power3.out",
+            immediateRender: false,
+          },
+          t0 + ZOOM * 0.60,
         );
-        tl.to(next, { autoAlpha: 1, duration: ZOOM * 0.4, ease: "power1.out" }, t0 + ZOOM * 0.5);
+
+        // 4. Reveal the next scene after the old scene disappears.
+        tl.to(
+          next,
+          {
+            autoAlpha: 1,
+            duration: ZOOM * 0.40,
+            ease: "power1.out",
+          },
+          t0 + ZOOM * 0.60,
+        );
+
+        // ==========================================
+        // ABOUT SECTION ANIMATION
+        // ==========================================
+
+        if (ids[i + 1] === "about") {
+          const heading =
+            next.querySelector<HTMLElement>(
+              "[data-about-heading]",
+            );
+
+          const copy =
+            next.querySelector<HTMLElement>(
+              "[data-about-copy]",
+            );
+
+          const education =
+            next.querySelector<HTMLElement>(
+              "[data-about-education]",
+            );
+
+          const focus =
+            next.querySelector<HTMLElement>(
+              "[data-about-focus]",
+            );
+
+          const location =
+            next.querySelector<HTMLElement>(
+              "[data-about-location]",
+            );
+
+          // 1. Heading moves upward into position.
+          if (heading) {
+            tl.fromTo(
+              heading,
+              { y: 76, autoAlpha: 0 },
+              {
+                y: 0,
+                autoAlpha: 1,
+                duration: 0.42,
+                ease: "power3.out",
+                immediateRender: false,
+              },
+              t0 + ZOOM * 0.78,
+            );
+          }
+
+          // 2. Description appears after heading.
+          if (copy) {
+            tl.fromTo(
+              copy,
+              { y: 28, autoAlpha: 0 },
+              {
+                y: 0,
+                autoAlpha: 1,
+                duration: 0.38,
+                ease: "power2.out",
+                immediateRender: false,
+              },
+              t0 + ZOOM * 0.90,
+            );
+          }
+
+          // 3. Education card enters first.
+          if (education) {
+            tl.fromTo(
+              education,
+              {
+                x: 110,
+                y: 12,
+                autoAlpha: 0,
+                scale: 0.96,
+              },
+              {
+                x: 0,
+                y: 0,
+                autoAlpha: 1,
+                scale: 1,
+                duration: 0.38,
+                ease: "power3.out",
+                immediateRender: false,
+              },
+              t0 + ZOOM * 0.95,
+            );
+          }
+
+          // 4. Core focus card enters second.
+          if (focus) {
+            tl.fromTo(
+              focus,
+              {
+                x: 90,
+                autoAlpha: 0,
+                scale: 0.96,
+              },
+              {
+                x: 0,
+                autoAlpha: 1,
+                scale: 1,
+                duration: 0.32,
+                ease: "power3.out",
+                immediateRender: false,
+              },
+              t0 + ZOOM * 1.10,
+            );
+          }
+
+          // 5. Based in card enters last.
+          if (location) {
+            tl.fromTo(
+              location,
+              {
+                x: 90,
+                autoAlpha: 0,
+                scale: 0.96,
+              },
+              {
+                x: 0,
+                autoAlpha: 1,
+                scale: 1,
+                duration: 0.32,
+                ease: "power3.out",
+                immediateRender: false,
+              },
+              t0 + ZOOM * 1.20,
+            );
+          }
+        }
       }
+
       // Rest on the final scene before releasing the pin.
       tl.to({}, { duration: HOLD }, (n - 1) * step);
 
       setSceneResolver((id) => {
         const idx = ids.indexOf(id as SectionId);
         const st = tl.scrollTrigger;
+
         if (idx < 0 || !st) return null;
-        return st.start + (st.end - st.start) * (labelTimes[idx]! / total);
+
+        return (
+          st.start +
+          (st.end - st.start) * (labelTimes[idx]! / total)
+        );
       });
 
       if (initialHash && ids.includes(initialHash as SectionId)) {
-        requestAnimationFrame(() => navigateTo(initialHash, { instant: true }));
+        requestAnimationFrame(() =>
+          navigateTo(initialHash, { instant: true }),
+        );
       }
 
       return () => setSceneResolver(null);
     });
 
+    // Natural scrolling on smaller screens or reduced-motion settings.
     mm.add(`not all and ${CINEMATIC_QUERY}`, () => {
       const io = new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
-            if (entry.isIntersecting) report(entry.target.id as SectionId);
+            if (entry.isIntersecting) {
+              report(entry.target.id as SectionId);
+            }
           }
         },
         { rootMargin: "-45% 0px -50% 0px" },
       );
+
       sceneEls.forEach((el) => io.observe(el));
+
       return () => io.disconnect();
     });
 
     let cancelled = false;
+
     document.fonts?.ready.then(() => {
       if (!cancelled) ScrollTrigger.refresh();
     });
@@ -172,3 +942,5 @@ export function CinematicStage({
     </div>
   );
 }
+
+
